@@ -43,6 +43,12 @@ except ImportError:
     print("FEHLER: 'python-dotenv' nicht installiert. -> pip install python-dotenv")
     sys.exit(1)
 
+try:
+    from duckduckgo_search import DDGS
+except ImportError:
+    print("FEHLER: 'duckduckgo_search' nicht installiert. -> pip install duckduckgo_search")
+    sys.exit(1)
+
 
 # ─── Logging Setup ──────────────────────────────────────────────────────────
 
@@ -129,6 +135,32 @@ TOOLS: list[dict[str, Any]] = [
                 }
             },
             "required": ["text"],
+        },
+    },
+    # ══════════════════════════════════════════════════════════════════════════
+    # PLATINUM: 5. Tool — Web-Suche (DuckDuckGo)
+    # ══════════════════════════════════════════════════════════════════════════
+    {
+        "name": "web_suche",
+        "description": (
+            "Sucht im Internet nach aktuellen Informationen. Verwende dieses Tool "
+            "wenn nach aktuellen Nachrichten, Fakten, Personen, Ereignissen oder "
+            "anderen Informationen gefragt wird, die du nicht sicher weisst. "
+            "Verwende es NICHT fuer Berechnungen oder Einheiten-Umrechnungen."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "suchbegriff": {
+                    "type": "string",
+                    "description": "Der Suchbegriff, z.B. 'aktuelle Nachrichten KI 2026'",
+                },
+                "max_ergebnisse": {
+                    "type": "integer",
+                    "description": "Maximale Anzahl Ergebnisse (1-5, Standard: 3)",
+                },
+            },
+            "required": ["suchbegriff"],
         },
     },
     # ══════════════════════════════════════════════════════════════════════════
@@ -394,6 +426,61 @@ def tool_einheiten_umrechner(wert: float, von: str, nach: str) -> str:
     )
 
 
+def tool_web_suche(suchbegriff: str, max_ergebnisse: int = 3) -> str:
+    """Sucht im Internet via DuckDuckGo (PLATINUM Tool).
+
+    Defensive Massnahmen:
+        - Input-Validierung (leerer String, Laenge)
+        - max_ergebnisse auf 1-5 begrenzt
+        - Timeout-Handling
+        - Exception-Handling fuer Netzwerkfehler
+    """
+    # Defensive: Input-Validierung
+    if not isinstance(suchbegriff, str) or not suchbegriff.strip():
+        return json.dumps({"fehler": "Leerer Suchbegriff."}, ensure_ascii=False)
+
+    if len(suchbegriff) > 200:
+        return json.dumps(
+            {"fehler": "Suchbegriff zu lang (max 200 Zeichen)."},
+            ensure_ascii=False,
+        )
+
+    # Defensive: max_ergebnisse begrenzen
+    if not isinstance(max_ergebnisse, int) or max_ergebnisse < 1:
+        max_ergebnisse = 3
+    max_ergebnisse = min(max_ergebnisse, 5)
+
+    try:
+        with DDGS() as ddgs:
+            resultate = list(ddgs.text(suchbegriff, max_results=max_ergebnisse))
+
+        if not resultate:
+            return json.dumps(
+                {"suchbegriff": suchbegriff, "ergebnisse": [], "hinweis": "Keine Ergebnisse gefunden."},
+                ensure_ascii=False,
+            )
+
+        ergebnisse = []
+        for r in resultate:
+            ergebnisse.append({
+                "titel": r.get("title", ""),
+                "link": r.get("href", ""),
+                "beschreibung": r.get("body", ""),
+            })
+
+        return json.dumps(
+            {"suchbegriff": suchbegriff, "anzahl": len(ergebnisse), "ergebnisse": ergebnisse},
+            ensure_ascii=False,
+        )
+
+    except Exception as exc:
+        logger.error("Web-Suche fehlgeschlagen: %s", exc)
+        return json.dumps(
+            {"fehler": f"Web-Suche fehlgeschlagen: {exc}"},
+            ensure_ascii=False,
+        )
+
+
 # ─── Tool-Registry (Mapping Name → Funktion) ────────────────────────────────
 
 TOOL_REGISTRY: dict[str, Any] = {
@@ -404,6 +491,10 @@ TOOL_REGISTRY: dict[str, Any] = {
         inputs.get("wert", 0),
         inputs.get("von", ""),
         inputs.get("nach", ""),
+    ),
+    "web_suche": lambda inputs: tool_web_suche(
+        inputs.get("suchbegriff", ""),
+        inputs.get("max_ergebnisse", 3),
     ),
 }
 
