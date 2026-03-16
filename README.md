@@ -4,7 +4,7 @@ Ein interaktiver CLI-Agent auf Basis der Anthropic Claude API mit autonomem Tool
 
 ## Features
 
-- **5 Tools:** Rechner, Aktuelles Datum, Text-Analyse, Einheiten-Umrechner, Web-Suche (DuckDuckGo)
+- **7 Tools:** Rechner, Aktuelles Datum, Text-Analyse, Einheiten-Umrechner, Web-Suche, Datei-Tool, Notizen
 - **Agent Loop:** Autonome Tool-Auswahl und -Verkettung (Claude entscheidet selbst welche Tools er braucht)
 - **Conversation History:** Gedaechtnis ueber mehrere Fragen hinweg
 - **Structured Output:** Erzwungenes JSON-Schema via `tool_choice`
@@ -62,6 +62,8 @@ Claude API (mit Tool-Definitionen)
             +-- text_analyse        (Wortanzahl, Top-5 etc.)
             +-- einheiten_umrechner (Temperatur, Distanz, Gewicht)
             +-- web_suche           (DuckDuckGo Internet-Suche)
+            +-- datei_tool          (Dateien lesen/schreiben)
+            +-- notizen             (persistente Notizen speichern/laden)
 ```
 
 ## Tiers
@@ -71,4 +73,4 @@ Claude API (mit Tool-Definitionen)
 | **Bronze** | 3 Tools + Agent Loop |
 | **Silver** | 4. Tool + Conversation History |
 | **Gold** | Structured Output + Error Handling |
-| **Platinum** | Web-Suche (DuckDuckGo) |
+| **Platinum** | Web-Suche, Datei-Tool, Notizen |

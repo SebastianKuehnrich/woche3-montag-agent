@@ -138,6 +138,66 @@ TOOLS: list[dict[str, Any]] = [
         },
     },
     # ══════════════════════════════════════════════════════════════════════════
+    # PLATINUM: 6. Tool — Datei lesen/schreiben
+    # ══════════════════════════════════════════════════════════════════════════
+    {
+        "name": "datei_tool",
+        "description": (
+            "Liest oder schreibt lokale Textdateien. Verwende dieses Tool wenn "
+            "der User eine Datei lesen, erstellen oder beschreiben moechte. "
+            "Kann auch verwendet werden um Ergebnisse in einer Datei zu speichern."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "aktion": {
+                    "type": "string",
+                    "enum": ["lesen", "schreiben"],
+                    "description": "'lesen' um eine Datei zu lesen, 'schreiben' um zu schreiben",
+                },
+                "pfad": {
+                    "type": "string",
+                    "description": "Der Dateipfad, z.B. 'notizen.txt' oder 'ergebnis.txt'",
+                },
+                "inhalt": {
+                    "type": "string",
+                    "description": "Der Inhalt zum Schreiben (nur bei aktion='schreiben')",
+                },
+            },
+            "required": ["aktion", "pfad"],
+        },
+    },
+    # ══════════════════════════════════════════════════════════════════════════
+    # PLATINUM: 7. Tool — Notizen (persistentes Gedaechtnis)
+    # ══════════════════════════════════════════════════════════════════════════
+    {
+        "name": "notizen",
+        "description": (
+            "Speichert, liest oder listet Notizen. Verwende dieses Tool wenn "
+            "der User sich etwas merken, eine Notiz speichern oder fruehere "
+            "Notizen abrufen moechte. Notizen bleiben zwischen Sitzungen erhalten."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "aktion": {
+                    "type": "string",
+                    "enum": ["speichern", "lesen", "auflisten", "loeschen"],
+                    "description": "Die Aktion: speichern, lesen, auflisten oder loeschen",
+                },
+                "titel": {
+                    "type": "string",
+                    "description": "Titel der Notiz (fuer speichern, lesen, loeschen)",
+                },
+                "inhalt": {
+                    "type": "string",
+                    "description": "Inhalt der Notiz (nur bei aktion='speichern')",
+                },
+            },
+            "required": ["aktion"],
+        },
+    },
+    # ══════════════════════════════════════════════════════════════════════════
     # PLATINUM: 5. Tool — Web-Suche (DuckDuckGo)
     # ══════════════════════════════════════════════════════════════════════════
     {
@@ -426,6 +486,192 @@ def tool_einheiten_umrechner(wert: float, von: str, nach: str) -> str:
     )
 
 
+def tool_datei(aktion: str, pfad: str, inhalt: str = "") -> str:
+    """Liest oder schreibt lokale Textdateien (PLATINUM Tool).
+
+    Defensive Massnahmen:
+        - Nur Dateien im aktuellen Verzeichnis erlaubt (kein Path Traversal)
+        - Maximale Dateigroesse beim Lesen begrenzt
+        - Nur Textdateien erlaubt (keine Binaerdateien)
+    """
+    # Defensive: Input-Validierung
+    if not isinstance(pfad, str) or not pfad.strip():
+        return json.dumps({"fehler": "Leerer Dateipfad."}, ensure_ascii=False)
+
+    # Defensive: Path Traversal verhindern
+    sicherer_pfad = Path(pfad).name  # Nur Dateiname, kein Verzeichnis
+    if sicherer_pfad != pfad and "/" not in pfad and "\\" not in pfad:
+        sicherer_pfad = pfad
+    else:
+        sicherer_pfad = Path(pfad).name
+
+    # Defensive: Keine versteckten Dateien oder Systemdateien
+    if sicherer_pfad.startswith(".") or sicherer_pfad.startswith("__"):
+        return json.dumps(
+            {"fehler": "Zugriff auf versteckte/Systemdateien nicht erlaubt."},
+            ensure_ascii=False,
+        )
+
+    ziel = Path(__file__).parent / sicherer_pfad
+
+    if aktion == "lesen":
+        if not ziel.exists():
+            return json.dumps(
+                {"fehler": f"Datei '{sicherer_pfad}' nicht gefunden."},
+                ensure_ascii=False,
+            )
+        try:
+            inhalt_gelesen = ziel.read_text(encoding="utf-8")
+            # Defensive: Groesse begrenzen
+            if len(inhalt_gelesen) > 50000:
+                inhalt_gelesen = inhalt_gelesen[:50000] + "\n... (abgeschnitten)"
+            return json.dumps(
+                {"datei": sicherer_pfad, "inhalt": inhalt_gelesen},
+                ensure_ascii=False,
+            )
+        except UnicodeDecodeError:
+            return json.dumps(
+                {"fehler": "Datei ist keine Textdatei."},
+                ensure_ascii=False,
+            )
+        except OSError as exc:
+            return json.dumps(
+                {"fehler": f"Lesefehler: {exc}"},
+                ensure_ascii=False,
+            )
+
+    elif aktion == "schreiben":
+        if not inhalt:
+            return json.dumps(
+                {"fehler": "Kein Inhalt zum Schreiben angegeben."},
+                ensure_ascii=False,
+            )
+        try:
+            ziel.write_text(inhalt, encoding="utf-8")
+            return json.dumps(
+                {"erfolg": True, "datei": sicherer_pfad, "zeichen": len(inhalt)},
+                ensure_ascii=False,
+            )
+        except OSError as exc:
+            return json.dumps(
+                {"fehler": f"Schreibfehler: {exc}"},
+                ensure_ascii=False,
+            )
+
+    return json.dumps(
+        {"fehler": f"Unbekannte Aktion: {aktion}. Erlaubt: lesen, schreiben"},
+        ensure_ascii=False,
+    )
+
+
+NOTIZEN_DATEI = Path(__file__).parent / "notizen.json"
+
+
+def tool_notizen(aktion: str, titel: str = "", inhalt: str = "") -> str:
+    """Persistentes Notizen-System mit JSON-Speicher (PLATINUM Tool).
+
+    Defensive Massnahmen:
+        - JSON-Datei wird bei Korruption neu erstellt
+        - Titel-Validierung
+        - Maximale Notiz-Anzahl begrenzt
+    """
+    # Notizen laden (defensiv)
+    notizen: dict[str, Any] = {}
+    if NOTIZEN_DATEI.exists():
+        try:
+            notizen = json.loads(NOTIZEN_DATEI.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            logger.warning("notizen.json korrupt — wird neu erstellt.")
+            notizen = {}
+
+    if aktion == "auflisten":
+        if not notizen:
+            return json.dumps(
+                {"hinweis": "Keine Notizen vorhanden."},
+                ensure_ascii=False,
+            )
+        liste = []
+        for key, val in notizen.items():
+            liste.append({
+                "titel": key,
+                "vorschau": val.get("inhalt", "")[:80],
+                "erstellt": val.get("erstellt", "unbekannt"),
+            })
+        return json.dumps(
+            {"anzahl": len(liste), "notizen": liste},
+            ensure_ascii=False,
+        )
+
+    if aktion == "speichern":
+        if not titel or not titel.strip():
+            return json.dumps(
+                {"fehler": "Titel darf nicht leer sein."},
+                ensure_ascii=False,
+            )
+        if not inhalt:
+            return json.dumps(
+                {"fehler": "Inhalt darf nicht leer sein."},
+                ensure_ascii=False,
+            )
+        # Defensive: Max 100 Notizen
+        if len(notizen) >= 100 and titel not in notizen:
+            return json.dumps(
+                {"fehler": "Maximale Anzahl (100) Notizen erreicht."},
+                ensure_ascii=False,
+            )
+        notizen[titel.strip()] = {
+            "inhalt": inhalt,
+            "erstellt": datetime.now().strftime("%d.%m.%Y %H:%M"),
+        }
+        try:
+            NOTIZEN_DATEI.write_text(
+                json.dumps(notizen, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            return json.dumps({"fehler": f"Speicherfehler: {exc}"}, ensure_ascii=False)
+        return json.dumps(
+            {"erfolg": True, "titel": titel.strip()},
+            ensure_ascii=False,
+        )
+
+    if aktion == "lesen":
+        if not titel or titel.strip() not in notizen:
+            return json.dumps(
+                {"fehler": f"Notiz '{titel}' nicht gefunden."},
+                ensure_ascii=False,
+            )
+        eintrag = notizen[titel.strip()]
+        return json.dumps(
+            {"titel": titel.strip(), "inhalt": eintrag["inhalt"], "erstellt": eintrag.get("erstellt", "")},
+            ensure_ascii=False,
+        )
+
+    if aktion == "loeschen":
+        if not titel or titel.strip() not in notizen:
+            return json.dumps(
+                {"fehler": f"Notiz '{titel}' nicht gefunden."},
+                ensure_ascii=False,
+            )
+        del notizen[titel.strip()]
+        try:
+            NOTIZEN_DATEI.write_text(
+                json.dumps(notizen, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            return json.dumps({"fehler": f"Speicherfehler: {exc}"}, ensure_ascii=False)
+        return json.dumps(
+            {"erfolg": True, "geloescht": titel.strip()},
+            ensure_ascii=False,
+        )
+
+    return json.dumps(
+        {"fehler": f"Unbekannte Aktion: {aktion}. Erlaubt: speichern, lesen, auflisten, loeschen"},
+        ensure_ascii=False,
+    )
+
+
 def tool_web_suche(suchbegriff: str, max_ergebnisse: int = 3) -> str:
     """Sucht im Internet via DuckDuckGo (PLATINUM Tool).
 
@@ -495,6 +741,16 @@ TOOL_REGISTRY: dict[str, Any] = {
     "web_suche": lambda inputs: tool_web_suche(
         inputs.get("suchbegriff", ""),
         inputs.get("max_ergebnisse", 3),
+    ),
+    "datei_tool": lambda inputs: tool_datei(
+        inputs.get("aktion", ""),
+        inputs.get("pfad", ""),
+        inputs.get("inhalt", ""),
+    ),
+    "notizen": lambda inputs: tool_notizen(
+        inputs.get("aktion", ""),
+        inputs.get("titel", ""),
+        inputs.get("inhalt", ""),
     ),
 }
 
