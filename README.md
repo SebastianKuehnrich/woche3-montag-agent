@@ -42,6 +42,28 @@ python main.py
 | `clear` | History loeschen |
 | `analyse: <text>` | Structured Output (Gold) |
 
+## Tools im Detail
+
+| Tool | Beschreibung | Beispiel-Prompt |
+|------|-------------|-----------------|
+| `rechner` | Sichere mathematische Berechnungen (kein `eval`) | "Was ist 42 * 17 + 891?" |
+| `aktuelles_datum` | Datum, Uhrzeit und Wochentag | "Welcher Tag ist heute?" |
+| `text_analyse` | Wortanzahl, Satzanzahl, Top-5 Woerter | "Analysiere diesen Text: ..." |
+| `einheiten_umrechner` | Temperatur, Distanz, Gewicht | "Rechne 100 km in Meilen um" |
+| `web_suche` | DuckDuckGo Internet-Suche (live) | "Suche nach aktuellen KI-Nachrichten" |
+| `datei_tool` | Lokale Dateien lesen/schreiben | "Lies die Datei reflexion.md" |
+| `notizen` | Persistente Notizen (speichern/lesen/loeschen) | "Merke dir: Meeting morgen 14 Uhr" |
+
+## Defensive Coding Massnahmen
+
+- **Kein unsicheres `eval()`** — `compile()` mit leerem `__builtins__` Namespace
+- **Path Traversal Schutz** — Datei-Tool erlaubt nur Dateien im Projektverzeichnis
+- **Input-Validierung** — Alle Tool-Inputs werden auf Typ, Laenge und erlaubte Werte geprueft
+- **Granulares Error Handling** — Jeder API-Fehler (401, 429, 500) wird separat behandelt
+- **Crashsicherer Betrieb** — `tool_ausfuehren_sicher()` faengt alle Exceptions ab
+- **Max Loop-Iterationen** — Schutz gegen Endlosschleifen (max 10 Durchlaeufe)
+- **JSON-Korruptionsschutz** — Notizen-Datei wird bei Fehler neu erstellt
+
 ## Architektur
 
 ```
@@ -64,6 +86,19 @@ Claude API (mit Tool-Definitionen)
             +-- web_suche           (DuckDuckGo Internet-Suche)
             +-- datei_tool          (Dateien lesen/schreiben)
             +-- notizen             (persistente Notizen speichern/laden)
+```
+
+## Projektstruktur
+
+```
+woche3-montag-agent/
+    agent.py              # Hauptmodul: Tools, Agent Loop, Structured Output
+    main.py               # Einstiegspunkt (startet agent.py)
+    test_connection.py    # API-Verbindungstest
+    verstaendnisfragen.py # Verstaendnisfragen zum Kurs
+    reflexion.md          # Reflexion ueber das Projekt
+    .env.example          # Vorlage fuer API Key
+    .gitignore            # Git-Ausschluesse
 ```
 
 ## Tiers
