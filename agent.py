@@ -925,6 +925,11 @@ def agent_fragen(
             )
             return final_text
 
+        # ── Version  2: ersaetze mit tiktoken ──
+
+
+
+
         # ── FALL 2: Claude will Tools benutzen ──
         elif antwort.stop_reason == "tool_use":
             # Assistenten-Antwort zur History hinzufuegen
